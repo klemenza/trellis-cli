@@ -751,6 +751,16 @@ default=admin
 options = "metadata,umask=0022"
 WSLCONF
 
+# Disable systemd rate limiting for PHP-FPM to prevent installation failures.
+# When multiple PHP extensions are installed, each triggers a php-fpm restart.
+# Without this, systemd's default rate limit (5 starts per 10s) causes failures
+# with "Start request repeated too quickly" during first provision.
+mkdir -p /etc/systemd/system/php8.3-fpm.service.d
+cat > /etc/systemd/system/php8.3-fpm.service.d/override.conf << 'SYSTEMD_OVERRIDE'
+[Unit]
+StartLimitIntervalSec=0
+SYSTEMD_OVERRIDE
+
 # Symlink Windows .ssh directory to admin user (shares SSH keys automatically)
 if [ -d "/mnt/c/Users/WIN_USERNAME_PLACEHOLDER/.ssh" ]; then
 	echo "Symlinking /home/admin/.ssh -> /mnt/c/Users/WIN_USERNAME_PLACEHOLDER/.ssh"
