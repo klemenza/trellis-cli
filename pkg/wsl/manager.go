@@ -686,16 +686,17 @@ func (m *Manager) BootstrapInstance(name string) error {
 	}
 	if emailOutput, err := exec.Command("git", "config", "--global", "user.email").Output(); err == nil {
 		gitUserEmail = strings.TrimSpace(string(emailOutput))
-    
+	}
+
 	// Get Windows username from Go (more reliable than from within WSL).
 	var windowsUser string
-	
+
 	// Method: USERNAME environment variable (standard on Windows)
 	windowsUser = os.Getenv("USERNAME")
 	if windowsUser != "" {
 		m.ui.Info(fmt.Sprintf("Found username from USERNAME env: %s", windowsUser))
 	}
-	
+
 	if windowsUser == "" {
 		m.ui.Warn("Could not determine Windows username from environment. SSH keys will not be copied automatically.")
 	}
@@ -769,7 +770,8 @@ fi
 if [ -n "GIT_USER_EMAIL_PLACEHOLDER" ]; then
 	echo "Configuring Git user.email: GIT_USER_EMAIL_PLACEHOLDER"
 	sudo -u admin git config --global user.email "GIT_USER_EMAIL_PLACEHOLDER"
-  
+fi
+
 # Disable systemd rate limiting for PHP-FPM to prevent installation failures.
 # When multiple PHP extensions are installed, each triggers a php-fpm restart.
 # Without this, systemd's default rate limit (5 starts per 10s) causes failures
@@ -792,6 +794,15 @@ else
 	chmod 700 /home/admin/.ssh
 	chown admin:admin /home/admin/.ssh
 fi
+
+# Forward the SSH key into the admin user's shell so ssh-agent is available
+# for git/ansible operations without prompting for the key passphrase each time.
+grep -q 'ssh-agent -s' /home/admin/.bashrc 2>/dev/null || cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
+
+eval $(ssh-agent -s)
+ssh-add ~/.ssh/id_rsa
+BASHRC_SSH_AGENT
+chown admin:admin /home/admin/.bashrc
 `
 
 	// Copy the ENTIRE project (trellis/ + site/ + .git/) from Windows into
