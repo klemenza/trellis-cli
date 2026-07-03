@@ -743,10 +743,11 @@ mkdir -p /home/admin/.ssh
 chmod 700 /home/admin/.ssh
 chown admin:admin /home/admin/.ssh
 
-# Forward the SSH key into the admin user's shell so ssh-agent is available
-# for git/ansible operations without prompting for the key passphrase each time.
-grep -q 'ssh-agent -s' /home/admin/.bashrc 2>/dev/null || cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
+# Forward the SSH key into interactive admin shells.
+# This avoids noisy errors when WSL starts non-interactive shells.
+grep -q 'trellis-wsl ssh-agent bootstrap' /home/admin/.bashrc 2>/dev/null || cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
 
+# trellis-wsl ssh-agent bootstrap
 eval $(ssh-agent -s)
 ssh-add ~/.ssh/id_rsa
 BASHRC_SSH_AGENT
