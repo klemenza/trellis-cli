@@ -742,6 +742,15 @@ WSLCONF
 mkdir -p /home/admin/.ssh
 chmod 700 /home/admin/.ssh
 chown admin:admin /home/admin/.ssh
+
+# Forward the SSH key into the admin user's shell so ssh-agent is available
+# for git/ansible operations without prompting for the key passphrase each time.
+grep -q 'ssh-agent -s' /home/admin/.bashrc 2>/dev/null || cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
+
+eval $(ssh-agent -s)
+ssh-add ~/.ssh/id_rsa
+BASHRC_SSH_AGENT
+chown admin:admin /home/admin/.bashrc
 `
 
 	// Copy the ENTIRE project (trellis/ + site/ + .git/) from Windows into
