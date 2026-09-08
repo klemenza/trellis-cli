@@ -831,10 +831,8 @@ func (m *Manager) BootstrapInstance(name string) error {
 	}
 
 	// Get Windows username from Go (more reliable than from within WSL).
-	var windowsUser string
-
 	// Method: USERNAME environment variable (standard on Windows)
-	windowsUser = os.Getenv("USERNAME")
+	windowsUser := os.Getenv("USERNAME")
 	if windowsUser != "" {
 		m.ui.Info(fmt.Sprintf("Found username from USERNAME env: %s", windowsUser))
 	}
