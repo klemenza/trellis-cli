@@ -401,6 +401,7 @@ func (m *Manager) EnsureCliVersion(name string) {
 	// Release path: no sidecar. Pin the distro to the host's EXACT version
 	// (up or down) by downloading that release asset.
 	if HostVersion == "canary" {
+		m.ui.Warn(fmt.Sprintf("Warning: dev build with no trellis-linux next to %s; in-distro trellis was not synced.", exePath))
 		return
 	}
 	if m.inDistroCliVersion(distro) == HostVersion {
@@ -426,6 +427,10 @@ func releaseAssetURL(version string) string {
 		version,
 	)
 }
+
+// latestReleaseAssetURL is the linux/amd64 trellis tarball of the fork's
+// latest release, used by dev builds that have no trellis-linux sidecar.
+const latestReleaseAssetURL = "https://github.com/qwatts-dev/trellis-cli/releases/latest/download/trellis_Linux_x86_64.tar.gz"
 
 // inDistroCliVersion returns the version reported by the in-distro trellis
 // binary (first line of `trellis --version`). Empty on any error.
@@ -1017,7 +1022,15 @@ chown admin:admin /home/admin/.bashrc
 			releaseAssetURL(HostVersion),
 		)
 	} else {
-		bootstrapScript.WriteString("curl -sL https://raw.githubusercontent.com/qwatts-dev/trellis-cli/master/scripts/get | bash -s\n")
+		// scripts/get installs roots/trellis-cli, which has no WSL backend:
+		// in-distro commands would fall back to hosts/development (Vagrant IP)
+		// and warn that the project isn't initialized. Use the fork's latest
+		// release instead.
+		m.ui.Warn(fmt.Sprintf("Warning: dev build with no trellis-linux next to %s; installing the latest fork release in the distro instead.", exePath))
+		fmt.Fprintf(&bootstrapScript,
+			"curl -fsSL %s | tar xz -C /usr/local/bin trellis && chmod 755 /usr/local/bin/trellis\n",
+			latestReleaseAssetURL,
+		)
 	}
 
 	// Bind-mount each site's directory from the ext4 project copy to the
