@@ -183,6 +183,9 @@ func (m *Manager) StartInstance(name string) error {
 	}
 
 	if m.distroRunning(distro) {
+		if err := m.ensureAdminBashrcSshAgentBootstrap(distro); err != nil {
+			m.ui.Warn(fmt.Sprintf("Warning: could not refresh ssh-agent bootstrap block: %v", err))
+		}
 		printStatus(m.ui, fmt.Sprintf("%s WSL distro already running", color.GreenString("[ok]")))
 		return nil
 	}
@@ -212,6 +215,10 @@ func (m *Manager) StartInstance(name string) error {
 		return err
 	}
 
+	if err := m.ensureAdminBashrcSshAgentBootstrap(distro); err != nil {
+		m.ui.Warn(fmt.Sprintf("Warning: could not refresh ssh-agent bootstrap block: %v", err))
+	}
+
 	// Add site hostnames to the Windows hosts file (127.0.0.1) so the
 	// browser can reach the dev site. WSL2 NAT forwards localhost ports
 	// into the distro automatically.
@@ -221,6 +228,25 @@ func (m *Manager) StartInstance(name string) error {
 
 	printStatus(m.ui, fmt.Sprintf("%s WSL distro '%s' started", color.GreenString("[ok]"), distro))
 	return nil
+}
+
+func (m *Manager) ensureAdminBashrcSshAgentBootstrap(distro string) error {
+	script := `set -e
+sed -i '/# trellis-wsl ssh-agent bootstrap/,/# trellis-wsl ssh-agent bootstrap end/d' /home/admin/.bashrc 2>/dev/null || true
+cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
+# trellis-wsl ssh-agent bootstrap
+eval $(ssh-agent -s)
+ssh-add ~/.ssh/id_rsa
+# trellis-wsl ssh-agent bootstrap end
+BASHRC_SSH_AGENT
+chown admin:admin /home/admin/.bashrc
+`
+
+	return command.Cmd("wsl", []string{
+		"-d", distro,
+		"-u", "admin",
+		"--", "bash", "-c", script,
+	}).Run()
 }
 
 func (m *Manager) StopInstance(name string) error {
@@ -942,12 +968,14 @@ else
 fi
 
 # Forward the SSH key into interactive admin shells.
-# This avoids noisy errors when WSL starts non-interactive shells.
-grep -q 'trellis-wsl ssh-agent bootstrap' /home/admin/.bashrc 2>/dev/null || cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
+# Rewrite this managed block to avoid preserving stale/expanded content.
+sed -i '/# trellis-wsl ssh-agent bootstrap/,/# trellis-wsl ssh-agent bootstrap end/d' /home/admin/.bashrc 2>/dev/null || true
+cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
 
 # trellis-wsl ssh-agent bootstrap
 eval $(ssh-agent -s)
 ssh-add ~/.ssh/id_rsa
+# trellis-wsl ssh-agent bootstrap end
 BASHRC_SSH_AGENT
 chown admin:admin /home/admin/.bashrc
 `)
