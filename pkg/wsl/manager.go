@@ -867,7 +867,7 @@ mkdir -p /etc/ssh
 touch /etc/ssh/sshd_not_to_be_run
 
 apt-get update -qq
-apt-get install -y -qq python3 python3-pip python3-venv rsync curl ca-certificates gnupg
+apt-get install -y -qq python3 python3-pip python3-venv rsync curl ca-certificates gnupg keychain
 
 # Install Node.js LTS (for Sage/frontend build tools like yarn dev).
 # Unlike upstream Lima where Node runs on the host, WSL project files live
@@ -928,26 +928,42 @@ cat > /etc/systemd/system/php8.3-fpm.service.d/override.conf << 'SYSTEMD_OVERRID
 StartLimitIntervalSec=0
 SYSTEMD_OVERRIDE
 
-# Symlink Windows .ssh directory to admin user (shares SSH keys automatically)
-if [ -d "/mnt/c/Users/WIN_USERNAME_PLACEHOLDER/.ssh" ]; then
-	echo "Symlinking /home/admin/.ssh -> /mnt/c/Users/WIN_USERNAME_PLACEHOLDER/.ssh"
-	ln -s "/mnt/c/Users/WIN_USERNAME_PLACEHOLDER/.ssh" /home/admin/.ssh
-	chown -h admin:admin /home/admin/.ssh
+# Copy SSH keys from the Windows .ssh directory into a real ext4 ~/.ssh.
+# A symlink to /mnt/c doesn't work: DrvFS reports the keys as 0644, so
+# OpenSSH rejects them, and a shared config/known_hosts may contain Windows
+# paths or CRLF line endings. Windows config is deliberately not copied.
+# The directory is always created since Ansible's known_hosts module needs it.
+[ -L /home/admin/.ssh ] && rm /home/admin/.ssh
+install -d -m 700 -o admin -g admin /home/admin/.ssh
+WIN_SSH_DIR="/mnt/c/Users/WIN_USERNAME_PLACEHOLDER/.ssh"
+if [ -n "WIN_USERNAME_PLACEHOLDER" ] && [ -d "$WIN_SSH_DIR" ]; then
+	echo "Copying SSH keys from $WIN_SSH_DIR to /home/admin/.ssh"
+	for src in "$WIN_SSH_DIR"/id_* "$WIN_SSH_DIR"/known_hosts; do
+		[ -f "$src" ] || continue
+		dest="/home/admin/.ssh/$(basename "$src")"
+		[ -e "$dest" ] && continue
+		tr -d '\r' < "$src" > "$dest"
+		case "$dest" in
+			*.pub|*/known_hosts) chmod 644 "$dest" ;;
+			*) chmod 600 "$dest" ;;
+		esac
+	done
+	chown -R admin:admin /home/admin/.ssh
 else
-	# No Windows .ssh - create empty directory for Ansible known_hosts module
-	echo "No Windows .ssh directory - creating empty /home/admin/.ssh"
-	mkdir -p /home/admin/.ssh
-	chmod 700 /home/admin/.ssh
-	chown admin:admin /home/admin/.ssh
+	echo "No Windows .ssh directory - created empty /home/admin/.ssh"
 fi
 
-# Forward the SSH key into interactive admin shells.
-# This avoids noisy errors when WSL starts non-interactive shells.
-grep -q 'trellis-wsl ssh-agent bootstrap' /home/admin/.bashrc 2>/dev/null || cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
+# Load SSH keys into a single ssh-agent shared by all interactive admin shells.
+# keychain reuses a running agent instead of starting one per shell, and only
+# asks for a key passphrase once per WSL boot. Older bootstrap versions
+# appended a per-shell ssh-agent block; remove it if present.
+sed -i '/^# trellis-wsl ssh-agent bootstrap$/,+2d' /home/admin/.bashrc 2>/dev/null || true
+grep -q 'trellis-wsl keychain bootstrap' /home/admin/.bashrc 2>/dev/null || cat >> /home/admin/.bashrc << 'BASHRC_SSH_AGENT'
 
-# trellis-wsl ssh-agent bootstrap
-eval $(ssh-agent -s)
-ssh-add ~/.ssh/id_rsa
+# trellis-wsl keychain bootstrap
+if command -v keychain >/dev/null 2>&1; then
+	eval "$(keychain --eval --quiet $(ls ~/.ssh/id_* 2>/dev/null | grep -v '\.pub$'))"
+fi
 BASHRC_SSH_AGENT
 chown admin:admin /home/admin/.bashrc
 `)
@@ -1079,7 +1095,10 @@ chown admin:admin /home/admin/.bashrc
 
 	err := command.WithOptions(
 		command.WithTermOutput(),
-	).Cmd("wsl", []string{"-d", distro, "--", "bash", "-c", script}).Run()
+	// --exec, not "--": "--" runs the command through the distro's default
+	// shell, which expands every $VAR and $(...) in the script before bash
+	// sees it (breaking the SSH key copy loop and the keychain .bashrc line).
+	).Cmd("wsl", []string{"-d", distro, "--exec", "bash", "-c", script}).Run()
 
 	if err != nil {
 		return fmt.Errorf("could not bootstrap WSL distro: %v", err)
