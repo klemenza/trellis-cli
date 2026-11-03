@@ -874,7 +874,11 @@ apt-get install -y -qq python3 python3-pip python3-venv rsync curl ca-certificat
 # on ext4 — so Node/yarn must be inside the distro where the developer works.
 curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
 apt-get install -y -qq nodejs
-corepack enable
+# Node 25+ no longer bundles corepack, so install it from npm when missing.
+# Use the absolute path: WSL appends the Windows PATH, and a bare "corepack"
+# can resolve to /mnt/c/Program Files/nodejs/corepack, which can't run here.
+[ -x /usr/bin/corepack ] || npm install -g --silent corepack
+/usr/bin/corepack enable
 
 pip3 install --break-system-packages --root-user-action=ignore -r ` + wslTrellisSrc + `/requirements.txt
 
