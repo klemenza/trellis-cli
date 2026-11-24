@@ -957,6 +957,19 @@ else
 	echo "No Windows .ssh directory - created empty /home/admin/.ssh"
 fi
 
+# Accept host keys of servers we haven't connected to yet. WSLg sets DISPLAY,
+# so when Ansible runs ssh without a tty, OpenSSH asks for host key
+# confirmation via the (missing) /usr/bin/ssh-askpass and the first provision
+# to a new server fails. accept-new still rejects changed host keys.
+if [ ! -e /home/admin/.ssh/config ]; then
+	cat > /home/admin/.ssh/config << 'SSH_CONFIG'
+Host *
+	StrictHostKeyChecking accept-new
+SSH_CONFIG
+	chmod 600 /home/admin/.ssh/config
+	chown admin:admin /home/admin/.ssh/config
+fi
+
 # Load SSH keys into a single ssh-agent shared by all interactive admin shells.
 # keychain reuses a running agent instead of starting one per shell, and only
 # asks for a key passphrase once per WSL boot. Older bootstrap versions
